@@ -11,6 +11,8 @@
 		79F3FD642B787A57005DD2EF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79F3FD632B787A57005DD2EF /* ContentView.swift */; };
 		79F3FD662B787A58005DD2EF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79F3FD652B787A58005DD2EF /* Assets.xcassets */; };
 		79F3FD692B787A58005DD2EF /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 79F3FD682B787A58005DD2EF /* Preview Assets.xcassets */; };
+		79F3FD7B2B787C09005DD2EF /* sample4.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 79F3FD7A2B787C09005DD2EF /* sample4.mp4 */; };
+		79F3FD7D2B7CD73E005DD2EF /* ScrubberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79F3FD7C2B7CD73E005DD2EF /* ScrubberView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +21,8 @@
 		79F3FD632B787A57005DD2EF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		79F3FD652B787A58005DD2EF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		79F3FD682B787A58005DD2EF /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		79F3FD7A2B787C09005DD2EF /* sample4.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = sample4.mp4; sourceTree = "<group>"; };
+		79F3FD7C2B7CD73E005DD2EF /* ScrubberView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrubberView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,7 +57,9 @@
 			children = (
 				79F3FD612B787A57005DD2EF /* scrubberApp.swift */,
 				79F3FD632B787A57005DD2EF /* ContentView.swift */,
+				79F3FD7C2B7CD73E005DD2EF /* ScrubberView.swift */,
 				79F3FD652B787A58005DD2EF /* Assets.xcassets */,
+				79F3FD7A2B787C09005DD2EF /* sample4.mp4 */,
 				79F3FD672B787A58005DD2EF /* Preview Content */,
 			);
 			path = scrubber;
@@ -127,6 +133,7 @@
 			files = (
 				79F3FD692B787A58005DD2EF /* Preview Assets.xcassets in Resources */,
 				79F3FD662B787A58005DD2EF /* Assets.xcassets in Resources */,
+				79F3FD7B2B787C09005DD2EF /* sample4.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +144,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79F3FD7D2B7CD73E005DD2EF /* ScrubberView.swift in Sources */,
 				79F3FD642B787A57005DD2EF /* ContentView.swift in Sources */,
 				79F3FD622B787A57005DD2EF /* scrubberApp.swift in Sources */,
 			);
