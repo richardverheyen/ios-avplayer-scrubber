@@ -34,13 +34,8 @@ struct ContentView: View {
                 Text("Video file not found.")
             }
         }
-//        .onAppear {
-//            player?.play()
-//        }
     }
 }
-
-
 struct VideoPlayerView: View {
     let videoURL: URL
     @State private var currentTime: CGFloat = 0.0
@@ -58,8 +53,6 @@ struct VideoPlayerView: View {
         }
     }
 }
-
-
 
 #Preview {
     ContentView()

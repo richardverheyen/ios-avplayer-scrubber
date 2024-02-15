@@ -3,16 +3,16 @@ import AVFoundation
 import SwiftUI
 
 // ScrubberView Features:
-// 1. Two-way binding between video playback and scrubber movement.
-// 2. Dynamic scrubber strip made of colored rectangles for visual guidance.
-// 3. Central cursor indicating current playback position with a white background and black border.
-// 4. User interaction with the scrubber to seek through the video.
-// 5. Automatic scrubber movement in sync witha video playback.
-// 6. Pan gesture recognition for manual scrubbing with pause/resume functionality.
-// 7. Continuous update of scrubber position based on video playback time.
-// 8. Utilizes UIScrollViewDelegate to handle scroll events and user interactions.
-// 9. Scrubber Strip Position and Width Binding: The width of the scrubber strip is fixed, but its position relative to the cursor changes based on the video playback time. Initially, the strip is positioned so that it covers half the screen width to the right of the cursor, indicating the start of the video. As the video plays, the strip moves left, and by the end of the video, it covers half the screen width to the left of the cursor. This behavior visually represents the video's progress and prevents scrolling beyond the video's start and end points.
-// 10. Segment Representation: Each 80px wide segment of the scrubber strip represents 1 second of video playback time, with timestamps and a border on the left side for clear demarcation.
+// 1. Two-way binding between video playback and scrubber movement: The scrubber's position updates in real-time as the video plays, and manually scrubbing updates the video playback position accordingly.
+// 2. Dynamic scrubber strip composed of colored rectangles for visual guidance, with each segment representing a specific duration of video playback time for easy reference.
+// 3. Central cursor indicating the current playback position with a distinct visual style (white background and black border) for clear visibility.
+// 4. User interaction with the scrubber allows seeking through the video: Dragging the scrubber pauses video playback and updates the playback time based on the scrubber's position. Releasing the scrubber resumes playback from the new position, respecting the original play state (playing or paused).
+// 5. Pan gesture recognition for manual scrubbing with intelligent play/pause functionality: Initiating a pan gesture on the scrubber temporarily alters the playback state for the duration of the interaction, with the video resuming its original state (playing or paused) once the gesture ends.
+// 6. Continuous update of scrubber position in sync with video playback, providing real-time feedback on the current video time.
+// 7. Utilizes UIScrollView for the scrubber strip, facilitating smooth scrolling interactions and visual feedback during manual scrubbing.
+// 8. Scrubber Strip Position and Width Binding: The scrubber's visual representation dynamically adjusts based on video playback, with the strip's movement directly linked to the video's current time, ensuring accurate scrubbing feedback.
+// 9. Segment Representation: Visual segments within the scrubber strip indicate video playback time, with each segment sized to represent a fixed duration and labeled with timestamps for easy navigation.
+
 
 struct ScrubberRepresentable: UIViewRepresentable {
     var player: AVPlayer
@@ -38,6 +38,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     private let cursorView = UIView()
     private var isUserInteracting = false
     private var observer: Any?
+    private var wasPlayingBeforeGesture = false // Track the play state before the gesture
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -163,21 +164,33 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     }
     
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
-        guard let player = player, let item = player.currentItem else { return }
+        guard let player = player, let duration = player.currentItem?.duration else { return }
 
         switch gesture.state {
         case .began:
+            // Check if the video was playing before starting the gesture
+            wasPlayingBeforeGesture = player.rate > 0
             player.pause()
             isUserInteracting = true
         case .changed:
-            let translation = gesture.translation(in: scrollView).x
-            let percentage = translation / scrollView.contentSize.width
-            let seekTime = item.duration.seconds * Double(percentage)
-            let time = CMTime(seconds: seekTime, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
-            gesture.setTranslation(.zero, in: scrollView)
+            let translation = gesture.translation(in: scrollView)
+            let currentOffset = scrollView.contentOffset.x
+            scrollView.setContentOffset(CGPoint(x: currentOffset - translation.x, y: 0), animated: false)
+            gesture.setTranslation(.zero, in: scrollView) // Reset translation to zero
+
+            // Calculate the new time based on the scrollView's content offset
+            let totalVideoDuration = duration.seconds
+            let percentageOfVideo = (scrollView.contentOffset.x + scrollView.bounds.width / 2) / scrollView.contentSize.width
+            let newTimeInSeconds = Double(percentageOfVideo) * totalVideoDuration
+            
+            // Seek to the new time without interrupting the user interaction
+            let newTime = CMTimeMakeWithSeconds(newTimeInSeconds, preferredTimescale: Int32(NSEC_PER_SEC))
+            player.seek(to: newTime, toleranceBefore: .zero, toleranceAfter: .zero)
         case .ended, .cancelled:
-            player.play()
+            // Resume playing only if the video was playing before the gesture began
+            if wasPlayingBeforeGesture {
+                player.play()
+            }
             isUserInteracting = false
         default:
             break
