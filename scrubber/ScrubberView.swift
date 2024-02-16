@@ -24,6 +24,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     }
     private let scrollView = UIScrollView()
     private let cursorView = UIView()
+    private let tooltipLabel = UILabel()
     private var isUserInteracting = false
     private var observer: Any?
     private var wasPlayingBeforeGesture = false // Track the play state before the gesture
@@ -43,6 +44,14 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         cursorView.layer.borderColor = UIColor.black.cgColor
         addSubview(cursorView)
         
+        tooltipLabel.backgroundColor = .black // Customize as needed
+        tooltipLabel.textColor = .white
+        tooltipLabel.textAlignment = .center
+        tooltipLabel.layer.cornerRadius = 5
+        tooltipLabel.layer.masksToBounds = true
+        tooltipLabel.text = "00:00"
+        addSubview(tooltipLabel)
+        
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture(_:)))
         scrollView.addGestureRecognizer(tapGesture)
     }
@@ -56,6 +65,10 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         scrollView.frame = self.bounds
         scrollView.contentInset = UIEdgeInsets(top: 0, left: self.bounds.width / 2, bottom: 0, right: self.bounds.width / 2)
         cursorView.frame = CGRect(x: (bounds.width - 2) / 2, y: 0, width: 3, height: bounds.height) // Center-aligned cursor
+        
+        let tooltipHeight: CGFloat = 20
+        let tooltipWidth: CGFloat = 50
+        tooltipLabel.frame = CGRect(x: (bounds.width - tooltipWidth) / 2, y: -tooltipHeight - 5, width: tooltipWidth, height: tooltipHeight)
         
         // Ensure the scrubber is configured whenever the layout is updated
         setupScrubberStrip()
@@ -176,8 +189,18 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         let progress = contentOffsetX / totalContentWidth
         let newTimeInSeconds = Double(progress) * duration
         
+        tooltipLabel.text = formatTime(seconds: newTimeInSeconds)
+        
         let newTime = CMTimeMakeWithSeconds(newTimeInSeconds, preferredTimescale: Int32(NSEC_PER_SEC))
         player?.seek(to: newTime, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+    
+    private func formatTime(seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.minute, .second]
+        formatter.zeroFormattingBehavior = [.pad]
+        formatter.unitsStyle = .positional
+        return formatter.string(from: seconds) ?? "00:00"
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -205,6 +228,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         // Only update the scrubber's position if the user is not currently interacting with it.
         if !isUserInteracting {
             let currentTime = player.currentTime().seconds
+            tooltipLabel.text = formatTime(seconds: currentTime)
             let progress = currentTime / duration
 
             // Calculate the new content offset without interrupting the user's scroll
