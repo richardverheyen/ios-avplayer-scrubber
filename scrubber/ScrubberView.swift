@@ -93,9 +93,39 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     
     private func createSegmentView(index: Int, width: CGFloat) -> UIView {
         let segmentView = UIView(frame: CGRect(x: CGFloat(index) * 80, y: 0, width: width, height: scrollView.frame.height))
-        segmentView.backgroundColor = index % 2 == 0 ? .blue : .purple
         segmentView.layer.borderWidth = 1.0
         segmentView.layer.borderColor = UIColor.black.cgColor
+
+        // Generate and set the thumbnail image for the segment
+        if let asset = player?.currentItem?.asset {
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            let timestamp = CMTime(seconds: Double(index), preferredTimescale: asset.duration.timescale)
+            
+            // Asynchronously generate the thumbnail
+            imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: timestamp)]) { [weak segmentView] _, image, _, _, _ in
+                if let cgImage = image, let segmentView = segmentView {
+                    // Calculate the crop rectangle to focus on the center 50%
+                    let imageWidth = CGFloat(cgImage.width)
+                    let imageHeight = CGFloat(cgImage.height)
+                    let cropSize = CGSize(width: imageWidth * 0.5, height: imageHeight * 0.5)
+                    let cropOrigin = CGPoint(x: imageWidth * 0.25, y: imageHeight * 0.25)
+                    let cropRect = CGRect(origin: cropOrigin, size: cropSize)
+
+                    if let croppedCgImage = cgImage.cropping(to: cropRect) {
+                        let croppedImage = UIImage(cgImage: croppedCgImage)
+                        DispatchQueue.main.async {
+                            let imageView = UIImageView(image: croppedImage)
+                            imageView.frame = segmentView.bounds
+                            imageView.contentMode = .scaleAspectFill
+                            imageView.clipsToBounds = true
+                            segmentView.addSubview(imageView)
+                            segmentView.sendSubviewToBack(imageView) // Ensure the label is visible on top
+                        }
+                    }
+                }
+            }
+        }
         
         let timestampLabel = UILabel(frame: CGRect(x: 4, y: (segmentView.frame.height - 20) / 2, width: width - 8, height: 20))
         timestampLabel.text = "\(index)"
