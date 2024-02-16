@@ -30,6 +30,7 @@ struct ScrubberRepresentable: UIViewRepresentable {
 class ScrubberView: UIView, UIScrollViewDelegate {
     var player: AVPlayer? {
         didSet {
+            playerRateObserver?.invalidate() // Invalidate the old observer
             setupPlayerObserver()
             configureScrubberForVideoDuration()
         }
@@ -39,6 +40,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     private var isUserInteracting = false
     private var observer: Any?
     private var wasPlayingBeforeGesture = false // Track the play state before the gesture
+    private var playerRateObserver: NSKeyValueObservation?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -47,6 +49,25 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    
+    private func setupViews() {
+        // Configure scrollView
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.alwaysBounceHorizontal = true
+        scrollView.delegate = self // Make sure ScrubberView is the delegate of scrollView
+        addSubview(scrollView)
+
+        // Configure cursorView
+        cursorView.backgroundColor = .white // Cursor color
+        cursorView.layer.borderWidth = 1
+        cursorView.layer.borderColor = UIColor.black.cgColor
+        addSubview(cursorView)
+        
+        // Add tap gesture recognizer to toggle play/pause
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture(_:)))
+        scrollView.addGestureRecognizer(tapGesture)
     }
     
     private func configureScrubberForVideoDuration() {
@@ -59,7 +80,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         scrollView.frame = self.bounds
-        cursorView.frame = CGRect(x: (bounds.width - 2) / 2, y: 0, width: 2, height: bounds.height) // Center-aligned cursor
+        cursorView.frame = CGRect(x: (bounds.width - 2) / 2, y: 0, width: 3, height: bounds.height) // Center-aligned cursor
         
         // Ensure the scrubber is configured whenever the layout is updated
         configureScrubberForVideoDuration()
@@ -109,24 +130,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         return segmentView
     }
     
-    private func setupViews() {
-        // Configure scrollView
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.alwaysBounceHorizontal = true
-        scrollView.delegate = self
-        addSubview(scrollView)
-        
-        // Configure cursorView
-        cursorView.backgroundColor = .white // Cursor color
-        cursorView.layer.borderWidth = 1
-        cursorView.layer.borderColor = UIColor.black.cgColor
-        addSubview(cursorView)
-        
-        // Add pan gesture recognizer to the scrollView
-        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePanGesture(_:)))
-        scrollView.addGestureRecognizer(panGesture)
-    }
-    
     private func setupPlayerObserver() {
         guard let player = player else { return }
 
@@ -141,17 +144,86 @@ class ScrubberView: UIView, UIScrollViewDelegate {
             guard let self = self, !self.isUserInteracting else { return }
             self.updateScrubberPositionBasedOnPlayback()
         }
+
+        // Observe the player's rate property to update the visual indicator
+        playerRateObserver = player.observe(\.rate, options: [.new, .old]) { [weak self] (player, change) in
+            DispatchQueue.main.async {
+                self?.updateVisualIndicator(isPlaying: player.rate > 0)
+            }
+        }
+        
+        // Add periodic time observer for playback position update
+        observer = player.addPeriodicTimeObserver(forInterval: CMTimeMakeWithSeconds(0.1, preferredTimescale: Int32(NSEC_PER_SEC)), queue: DispatchQueue.main) { [weak self] _ in
+            guard let strongSelf = self, !strongSelf.isUserInteracting else { return }
+            
+            // Calculate the new content offset based on the player's current time
+            if let duration = strongSelf.player?.currentItem?.duration.seconds, duration > 0 {
+                let currentTime = strongSelf.player?.currentTime().seconds ?? 0
+                let progress = currentTime / duration
+                let contentOffsetX = strongSelf.calculateContentOffsetX(progress: progress)
+                strongSelf.scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
+            }
+        }
+    }
+    
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // User interaction begins
+        wasPlayingBeforeGesture = player?.rate ?? 0 > 0
+        player?.pause()
+        isUserInteracting = true
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard let duration = player?.currentItem?.duration.seconds, duration > 0, isUserInteracting else { return }
+        
+        // This block is only entered if the user is actively dragging the scrollView.
+        let contentOffsetX = scrollView.contentOffset.x
+        let totalContentWidth = scrollView.contentSize.width
+        let progress = contentOffsetX / totalContentWidth
+        let newTimeInSeconds = Double(progress) * duration
+        
+        let newTime = CMTimeMakeWithSeconds(newTimeInSeconds, preferredTimescale: Int32(NSEC_PER_SEC))
+        player?.seek(to: newTime, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        // User interaction ends without deceleration
+        if !decelerate {
+            handlePlaybackResumption()
+        }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        // User interaction ends with deceleration
+        handlePlaybackResumption()
+    }
+
+    private func handlePlaybackResumption() {
+        if wasPlayingBeforeGesture {
+            player?.play()
+        }
+        isUserInteracting = false
     }
 
     private func updateScrubberPositionBasedOnPlayback() {
         guard let player = player, let duration = player.currentItem?.duration.seconds, duration > 0 else { return }
-        
-        let currentTime = player.currentTime().seconds
-        let progress = currentTime / duration
-        
-        // Adjust contentOffsetX calculation here
-        let contentOffsetX = calculateContentOffsetX(progress: progress)
-        scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: true)
+
+        // Only update the scrubber's position if the user is not currently interacting with it.
+        if !isUserInteracting {
+            let currentTime = player.currentTime().seconds
+            let progress = currentTime / duration
+
+            // Calculate the new content offset without interrupting the user's scroll
+            let contentOffsetX = calculateContentOffsetX(progress: progress)
+
+            // Use DispatchQueue to ensure the UI update is performed on the main thread.
+            DispatchQueue.main.async {
+                // Animate the content offset change to smooth out the update when the user is not interacting.
+                UIView.animate(withDuration: 0.1, animations: {
+                    self.scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
+                })
+            }
+        }
     }
 
     private func calculateContentOffsetX(progress: Double) -> CGFloat {
@@ -161,6 +233,23 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         let contentOffsetX = CGFloat(progress * stripContentWidth) - appWidth / 2
 
         return contentOffsetX
+    }
+    
+    @objc private func handleTapGesture(_ gesture: UITapGestureRecognizer) {
+        guard let player = player else { return }
+
+        if player.rate > 0 {
+            player.pause()
+            updateVisualIndicator(isPlaying: false)
+        } else {
+            player.play()
+            updateVisualIndicator(isPlaying: true)
+        }
+    }
+    
+    private func updateVisualIndicator(isPlaying: Bool) {
+        // Change cursorView color based on play state
+        cursorView.backgroundColor = isPlaying ? .green : .red
     }
     
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
@@ -201,5 +290,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         if let observer = observer {
             player?.removeTimeObserver(observer)
         }
+        playerRateObserver?.invalidate()
     }
 }
