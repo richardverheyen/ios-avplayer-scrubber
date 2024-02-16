@@ -2,18 +2,6 @@ import UIKit
 import AVFoundation
 import SwiftUI
 
-// ScrubberView Features:
-// 1. Two-way binding between video playback and scrubber movement: The scrubber's position updates in real-time as the video plays, and manually scrubbing updates the video playback position accordingly.
-// 2. Dynamic scrubber strip composed of colored rectangles for visual guidance, with each segment representing a specific duration of video playback time for easy reference.
-// 3. Central cursor indicating the current playback position with a distinct visual style (white background and black border) for clear visibility.
-// 4. User interaction with the scrubber allows seeking through the video: Dragging the scrubber pauses video playback and updates the playback time based on the scrubber's position. Releasing the scrubber resumes playback from the new position, respecting the original play state (playing or paused).
-// 5. Pan gesture recognition for manual scrubbing with intelligent play/pause functionality: Initiating a pan gesture on the scrubber temporarily alters the playback state for the duration of the interaction, with the video resuming its original state (playing or paused) once the gesture ends.
-// 6. Continuous update of scrubber position in sync with video playback, providing real-time feedback on the current video time.
-// 7. Utilizes UIScrollView for the scrubber strip, facilitating smooth scrolling interactions and visual feedback during manual scrubbing.
-// 8. Scrubber Strip Position and Width Binding: The scrubber's visual representation dynamically adjusts based on video playback, with the strip's movement directly linked to the video's current time, ensuring accurate scrubbing feedback.
-// 9. Segment Representation: Visual segments within the scrubber strip indicate video playback time, with each segment sized to represent a fixed duration and labeled with timestamps for easy navigation.
-
-
 struct ScrubberRepresentable: UIViewRepresentable {
     var player: AVPlayer
     func makeUIView(context: Context) -> ScrubberView {
@@ -32,7 +20,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         didSet {
             playerRateObserver?.invalidate() // Invalidate the old observer
             setupPlayerObserver()
-            configureScrubberForVideoDuration()
         }
     }
     private let scrollView = UIScrollView()
@@ -44,15 +31,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        setupViews()
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    
-    private func setupViews() {
         // Configure scrollView
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
@@ -60,30 +38,27 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         addSubview(scrollView)
 
         // Configure cursorView
-        cursorView.backgroundColor = .white // Cursor color
+        cursorView.backgroundColor = .red // Cursor color
         cursorView.layer.borderWidth = 1
         cursorView.layer.borderColor = UIColor.black.cgColor
         addSubview(cursorView)
         
-        // Add tap gesture recognizer to toggle play/pause
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture(_:)))
         scrollView.addGestureRecognizer(tapGesture)
     }
     
-    private func configureScrubberForVideoDuration() {
-        // This method needs to be called after the player is set to adjust the scrubber based on the video's duration
-        guard let duration = player?.currentItem?.asset.duration.seconds, duration > 0 else { return }
-        let numberOfSegments = Int(ceil(duration))
-        setupScrubberStrip()
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
     override func layoutSubviews() {
         super.layoutSubviews()
         scrollView.frame = self.bounds
+        scrollView.contentInset = UIEdgeInsets(top: 0, left: self.bounds.width / 2, bottom: 0, right: self.bounds.width / 2)
         cursorView.frame = CGRect(x: (bounds.width - 2) / 2, y: 0, width: 3, height: bounds.height) // Center-aligned cursor
         
         // Ensure the scrubber is configured whenever the layout is updated
-        configureScrubberForVideoDuration()
+        setupScrubberStrip()
     }
     
     private func setupScrubberStrip() {
@@ -133,6 +108,8 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     private func setupPlayerObserver() {
         guard let player = player else { return }
 
+        player.seek(to: CMTimeMakeWithSeconds(0, preferredTimescale: Int32(NSEC_PER_SEC)), toleranceBefore: .zero, toleranceAfter: .zero)
+        
         // Remove any existing observer to avoid duplicates
         if let observer = observer {
             player.removeTimeObserver(observer)
@@ -140,7 +117,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         }
 
         // Add a periodic time observer to the player
-        observer = player.addPeriodicTimeObserver(forInterval: CMTimeMakeWithSeconds(0.1, preferredTimescale: Int32(NSEC_PER_SEC)), queue: DispatchQueue.main) { [weak self] _ in
+        observer = player.addPeriodicTimeObserver(forInterval: CMTimeMakeWithSeconds(0.0333, preferredTimescale: Int32(NSEC_PER_SEC)), queue: DispatchQueue.main) { [weak self] _ in
             guard let self = self, !self.isUserInteracting else { return }
             self.updateScrubberPositionBasedOnPlayback()
         }
@@ -149,19 +126,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         playerRateObserver = player.observe(\.rate, options: [.new, .old]) { [weak self] (player, change) in
             DispatchQueue.main.async {
                 self?.updateVisualIndicator(isPlaying: player.rate > 0)
-            }
-        }
-        
-        // Add periodic time observer for playback position update
-        observer = player.addPeriodicTimeObserver(forInterval: CMTimeMakeWithSeconds(0.1, preferredTimescale: Int32(NSEC_PER_SEC)), queue: DispatchQueue.main) { [weak self] _ in
-            guard let strongSelf = self, !strongSelf.isUserInteracting else { return }
-            
-            // Calculate the new content offset based on the player's current time
-            if let duration = strongSelf.player?.currentItem?.duration.seconds, duration > 0 {
-                let currentTime = strongSelf.player?.currentTime().seconds ?? 0
-                let progress = currentTime / duration
-                let contentOffsetX = strongSelf.calculateContentOffsetX(progress: progress)
-                strongSelf.scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
             }
         }
     }
@@ -177,7 +141,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         guard let duration = player?.currentItem?.duration.seconds, duration > 0, isUserInteracting else { return }
         
         // This block is only entered if the user is actively dragging the scrollView.
-        let contentOffsetX = scrollView.contentOffset.x
+        let contentOffsetX = scrollView.contentOffset.x + self.bounds.width / 2
         let totalContentWidth = scrollView.contentSize.width
         let progress = contentOffsetX / totalContentWidth
         let newTimeInSeconds = Double(progress) * duration
@@ -218,10 +182,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
 
             // Use DispatchQueue to ensure the UI update is performed on the main thread.
             DispatchQueue.main.async {
-                // Animate the content offset change to smooth out the update when the user is not interacting.
-                UIView.animate(withDuration: 0.1, animations: {
-                    self.scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
-                })
+                self.scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
             }
         }
     }
@@ -237,11 +198,17 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     
     @objc private func handleTapGesture(_ gesture: UITapGestureRecognizer) {
         guard let player = player else { return }
-
+        
+        let duration = player.currentItem?.duration.seconds
+        let currentTime = player.currentTime().seconds
+        
         if player.rate > 0 {
             player.pause()
             updateVisualIndicator(isPlaying: false)
         } else {
+            if duration != nil && currentTime >= duration! {
+                player.seek(to: CMTimeMakeWithSeconds(0, preferredTimescale: Int32(NSEC_PER_SEC)), toleranceBefore: .zero, toleranceAfter: .zero)
+            }
             player.play()
             updateVisualIndicator(isPlaying: true)
         }
@@ -250,40 +217,6 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     private func updateVisualIndicator(isPlaying: Bool) {
         // Change cursorView color based on play state
         cursorView.backgroundColor = isPlaying ? .green : .red
-    }
-    
-    @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
-        guard let player = player, let duration = player.currentItem?.duration else { return }
-
-        switch gesture.state {
-        case .began:
-            // Check if the video was playing before starting the gesture
-            wasPlayingBeforeGesture = player.rate > 0
-            player.pause()
-            isUserInteracting = true
-        case .changed:
-            let translation = gesture.translation(in: scrollView)
-            let currentOffset = scrollView.contentOffset.x
-            scrollView.setContentOffset(CGPoint(x: currentOffset - translation.x, y: 0), animated: false)
-            gesture.setTranslation(.zero, in: scrollView) // Reset translation to zero
-
-            // Calculate the new time based on the scrollView's content offset
-            let totalVideoDuration = duration.seconds
-            let percentageOfVideo = (scrollView.contentOffset.x + scrollView.bounds.width / 2) / scrollView.contentSize.width
-            let newTimeInSeconds = Double(percentageOfVideo) * totalVideoDuration
-            
-            // Seek to the new time without interrupting the user interaction
-            let newTime = CMTimeMakeWithSeconds(newTimeInSeconds, preferredTimescale: Int32(NSEC_PER_SEC))
-            player.seek(to: newTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        case .ended, .cancelled:
-            // Resume playing only if the video was playing before the gesture began
-            if wasPlayingBeforeGesture {
-                player.play()
-            }
-            isUserInteracting = false
-        default:
-            break
-        }
     }
     
     deinit {
