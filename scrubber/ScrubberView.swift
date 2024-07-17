@@ -29,6 +29,7 @@ class ScrubberView: UIView, UIScrollViewDelegate {
     private var observer: Any?
     private var wasPlayingBeforeGesture = false // Track the play state before the gesture
     private var playerRateObserver: NSKeyValueObservation?
+    private var zoomFactor: CGFloat = 1.0 // Add this line
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -54,10 +55,24 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture(_:)))
         scrollView.addGestureRecognizer(tapGesture)
+        
+        // Add this line to set up the pinch gesture
+        let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
+        scrollView.addGestureRecognizer(pinchGesture)
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    // Add this method to handle pinch gestures
+    @objc private func handlePinchGesture(_ gesture: UIPinchGestureRecognizer) {
+        if gesture.state == .changed {
+            let scale = gesture.scale
+            zoomFactor *= scale
+            gesture.scale = 1.0
+            setupScrubberStrip()
+        }
     }
     
     override func layoutSubviews() {
@@ -78,74 +93,69 @@ class ScrubberView: UIView, UIScrollViewDelegate {
         // Clear existing subviews in the scrollView
         scrollView.subviews.forEach({ $0.removeFromSuperview() })
 
-        let fullSegmentWidth: CGFloat = 80.0 // Width for whole second segments
+        let baseSegmentWidth: CGFloat = 80.0 // Base width for whole second segments
         let videoDuration = player?.currentItem?.asset.duration.seconds ?? 0
-        let numberOfFullSegments = Int(videoDuration) // Full second segments
-        let fractionalPart = videoDuration - Double(numberOfFullSegments) // Fractional second
-        let fractionalSegmentWidth = fullSegmentWidth * CGFloat(fractionalPart) // Width for the fractional second segment
+        
+        // Calculate the segment duration based on the zoom factor
+        let segmentDuration = max(1, Int(round(1 / zoomFactor)))
+        let numberOfFullSegments = Int(videoDuration) / segmentDuration
+        let fractionalPart = videoDuration - Double(numberOfFullSegments * segmentDuration)
 
         var totalWidth: CGFloat = 0
 
-        // Create segments for full seconds
+        // Create segments for full durations
         for i in 0..<numberOfFullSegments {
-            let segmentView = createSegmentView(index: i, width: fullSegmentWidth)
+            let segmentStartTime = i * segmentDuration
+            let segmentWidth = baseSegmentWidth * zoomFactor * CGFloat(segmentDuration)
+            let segmentView = createSegmentView(startTime: segmentStartTime, width: segmentWidth)
+            segmentView.frame.origin.x = totalWidth
             scrollView.addSubview(segmentView)
             totalWidth += segmentView.frame.width
         }
 
         // Add fractional segment if needed
         if fractionalPart > 0 {
-            let segmentView = createSegmentView(index: numberOfFullSegments, width: fractionalSegmentWidth)
+            let segmentStartTime = numberOfFullSegments * segmentDuration
+            let segmentWidth = baseSegmentWidth * zoomFactor * CGFloat(fractionalPart)
+            let segmentView = createSegmentView(startTime: segmentStartTime, width: segmentWidth)
+            segmentView.frame.origin.x = totalWidth
             scrollView.addSubview(segmentView)
             totalWidth += segmentView.frame.width
         }
 
         // Adjust scrollView contentSize to fit all segments
         scrollView.contentSize = CGSize(width: totalWidth, height: scrollView.frame.height)
+        
+        // Center the zoomed position
+        let currentTime = player?.currentTime().seconds ?? 0
+        let progress = currentTime / videoDuration
+        let contentOffsetX = CGFloat(progress * totalWidth) - scrollView.bounds.width / 2
+        scrollView.setContentOffset(CGPoint(x: contentOffsetX, y: 0), animated: false)
     }
     
-    private func createSegmentView(index: Int, width: CGFloat) -> UIView {
-        let segmentView = UIView(frame: CGRect(x: CGFloat(index) * 80, y: 0, width: width, height: scrollView.frame.height))
+    private func createSegmentView(startTime: Int, width: CGFloat) -> UIView {
+        let segmentView = UIView(frame: CGRect(x: CGFloat(startTime) * width / CGFloat(max(1, Int(round(1 / zoomFactor)))), y: 0, width: width, height: scrollView.frame.height))
+        segmentView.backgroundColor = .clear
         segmentView.layer.borderWidth = 1.0
-        segmentView.layer.borderColor = UIColor.black.cgColor
-
-        // Generate and set the thumbnail image for the segment
-        if let asset = player?.currentItem?.asset {
-            let imageGenerator = AVAssetImageGenerator(asset: asset)
-            imageGenerator.appliesPreferredTrackTransform = true
-            let timestamp = CMTime(seconds: Double(index), preferredTimescale: asset.duration.timescale)
-            
-            // Asynchronously generate the thumbnail
-            imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: timestamp)]) { [weak segmentView] _, image, _, _, _ in
-                if let cgImage = image, let segmentView = segmentView {
-                    // Calculate the crop rectangle to focus on the center 50%
-                    let imageWidth = CGFloat(cgImage.width)
-                    let imageHeight = CGFloat(cgImage.height)
-                    let cropSize = CGSize(width: imageWidth * 0.5, height: imageHeight * 0.5)
-                    let cropOrigin = CGPoint(x: imageWidth * 0.25, y: imageHeight * 0.25)
-                    let cropRect = CGRect(origin: cropOrigin, size: cropSize)
-
-                    if let croppedCgImage = cgImage.cropping(to: cropRect) {
-                        let croppedImage = UIImage(cgImage: croppedCgImage)
-                        DispatchQueue.main.async {
-                            let imageView = UIImageView(image: croppedImage)
-                            imageView.frame = segmentView.bounds
-                            imageView.contentMode = .scaleAspectFill
-                            imageView.clipsToBounds = true
-                            segmentView.addSubview(imageView)
-                            segmentView.sendSubviewToBack(imageView) // Ensure the label is visible on top
-                        }
-                    }
-                }
-            }
-        }
+        segmentView.layer.borderColor = UIColor.white.cgColor
         
-        let timestampLabel = UILabel(frame: CGRect(x: 4, y: (segmentView.frame.height - 20) / 2, width: width - 8, height: 20))
-        timestampLabel.text = "\(index)"
+        let timestampLabel = UILabel(frame: CGRect(x: 4, y: 0, width: width - 8, height: 20))
+        timestampLabel.text = formatDuration(seconds: startTime)
         timestampLabel.textColor = .white
         segmentView.addSubview(timestampLabel)
         
         return segmentView
+    }
+    
+    private func formatDuration(seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+
+        if minutes > 0 {
+            return String(format: "%dm %ds", minutes, remainingSeconds)
+        } else {
+            return String(format: "%ds", remainingSeconds)
+        }
     }
     
     private func setupPlayerObserver() {
